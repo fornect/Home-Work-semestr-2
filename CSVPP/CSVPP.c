@@ -105,12 +105,12 @@ int main()
         char string3[1024];
         j = 0;
         t = 0;
-        for (int c=0; c < countCol; c++) {
+        for (int c = 0; c < countCol; c++) {
             string3[t] = '|';
             t++;
             string3[t] = ' ';
             t++;
-            
+
             for (int n = 0; n <= arrLong[j]; n++) {
                 if (arrData[i].data[n] && arrData[i].data[n] != '\n') {
                     string3[t] = arrData[i].data[n];

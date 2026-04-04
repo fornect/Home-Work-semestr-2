@@ -11,4 +11,4 @@ jobs:
       - uses: actions/checkout@v5
       - name: Check format
         run: |
-          find . -path ./build -prune -o -type f -name '*.[c|h]' -print | xargs clang-format-18 --style=file --dry-run -Werror
+          find . -path ./build -prune -o -type f -name '*.[c|h]' -print | xargs clang-format --style=file --dry-run -Werror

@@ -44,11 +44,14 @@ Node* createNode(Airport airport)
 
 Node* rotateRight(Node* y)
 {
+    if (!y || !y->left)
+        return y;
+
     Node* x = y->left;
-    Node* T2 = x->right;
+    Node* z = x->right;
 
     x->right = y;
-    y->left = T2;
+    y->left = z;
 
     int leftHeightY, rightHeightY;
     leftHeightY = height(y->left);
@@ -73,11 +76,14 @@ Node* rotateRight(Node* y)
 
 Node* rotateLeft(Node* x)
 {
+    if (!x || !x->right)
+        return x;
+
     Node* y = x->right;
-    Node* T2 = y->left;
+    Node* z = y->left;
 
     y->left = x;
-    x->right = T2;
+    x->right = z;
 
     int leftHeightX, rightHeightX;
     leftHeightX = height(x->left);
@@ -128,35 +134,22 @@ Node* insert(Node* node, Airport airport)
     int balance = getBalance(node);
 
     if (balance > 1 && node->left) {
-        int cmpLeft = strcmp(airport.code, node->left->airport.code);
-        if (cmpLeft < 0) {
+        if (strcmp(airport.code, node->left->airport.code) < 0) {
             return rotateRight(node);
-        }
-    }
-
-    if (balance < -1 && node->right) {
-        int cmpRight = strcmp(airport.code, node->right->airport.code);
-        if (cmpRight > 0) {
-            return rotateLeft(node);
-        }
-    }
-
-    if (balance > 1 && node->left) {
-        int cmpLeft = strcmp(airport.code, node->left->airport.code);
-        if (cmpLeft > 0) {
+        } else {
             node->left = rotateLeft(node->left);
             return rotateRight(node);
         }
     }
 
     if (balance < -1 && node->right) {
-        int cmpRight = strcmp(airport.code, node->right->airport.code);
-        if (cmpRight < 0) {
+        if (strcmp(airport.code, node->right->airport.code) > 0) {
+            return rotateLeft(node);
+        } else {
             node->right = rotateRight(node->right);
             return rotateLeft(node);
         }
     }
-
     return node;
 }
 
@@ -218,24 +211,17 @@ Node* deleteNode(Node* root, char* code)
 
     int balance = getBalance(root);
 
-    if (balance > 1 && getBalance(root->left) >= 0) {
+    if (balance > 1) {
+        if (getBalance(root->left) < 0)
+            root->left = rotateLeft(root->left);
         return rotateRight(root);
     }
 
-    if (balance > 1 && getBalance(root->left) < 0) {
-        root->left = rotateLeft(root->left);
-        return rotateRight(root);
-    }
-
-    if (balance < -1 && getBalance(root->right) <= 0) {
+    if (balance < -1) {
+        if (getBalance(root->right) > 0)
+            root->right = rotateRight(root->right);
         return rotateLeft(root);
     }
-
-    if (balance < -1 && getBalance(root->right) > 0) {
-        root->right = rotateRight(root->right);
-        return rotateLeft(root);
-    }
-
     return root;
 }
 
@@ -299,13 +285,20 @@ void trimNewline(char* str)
 
 void toUpperCase(char* str)
 {
-    for (int i = 0; str[i]; i++) {
-        str[i] = toupper(str[i]);
+    if (str == NULL) {
+        return;
+    }
+    for (int i = 0; str[i] != '\0'; i++) {
+        str[i] = (char)toupper((unsigned char)str[i]);
     }
 }
 
 int loadAirports(const char* filename, Node** root)
 {
+    if (root == NULL) {
+        return -1;
+    }
+
     FILE* file = fopen(filename, "r");
     if (!file) {
         return -1;
@@ -321,8 +314,10 @@ int loadAirports(const char* filename, Node** root)
         if (colon) {
             Airport airport;
             *colon = '\0';
-            strcpy(airport.code, line);
-            strcpy(airport.name, colon + 1);
+            strncpy(airport.code, line, sizeof(airport.code) - 1);
+            airport.code[sizeof(airport.code) - 1] = '\0';
+            strncpy(airport.name, colon + 1, sizeof(airport.name) - 1);
+            airport.name[sizeof(airport.name) - 1] = '\0';
             *root = insert(*root, airport);
             count++;
         }
@@ -330,121 +325,4 @@ int loadAirports(const char* filename, Node** root)
 
     fclose(file);
     return count;
-}
-
-int main(int argc, char* argv[])
-{
-    Node* root = NULL;
-    char filename[256];
-
-    if (argc < 2) {
-        printf("Использование: %s <файл_аэропортов>\n", argv[0]);
-        return 1;
-    }
-
-    strcpy(filename, argv[1]);
-
-    int loadCount = loadAirports(filename, &root);
-    if (loadCount < 0) {
-        printf("Ошибка: Не удалось открыть файл %s\n", filename);
-        return 1;
-    }
-
-    printf("Загружено %d аэропортов. Система готова к работе.\n", loadCount);
-
-    char command[32];
-    char line[512];
-
-    while (1) {
-        printf("\n> ");
-        if (!fgets(line, sizeof(line), stdin)) {
-            break;
-        }
-
-        trimNewline(line);
-
-        if (strlen(line) == 0) {
-            continue;
-        }
-
-        sscanf(line, "%s", command);
-
-        if (strcmp(command, "quit") == 0) {
-            break;
-        } else if (strcmp(command, "save") == 0) {
-            if (saveTreeToFile(root, filename)) {
-                int total = countNodes(root);
-                printf("База сохранена: %d аэропортов.\n", total);
-            } else {
-                printf("Ошибка при сохранении базы.\n");
-            }
-        } else if (strcmp(command, "find") == 0) {
-            char code[5];
-            if (sscanf(line, "%*s %s", code) != 1) {
-                printf("Использование: find <код>\n");
-                continue;
-            }
-            toUpperCase(code);
-
-            Node* found = search(root, code);
-            if (found) {
-                printf("%s → %s\n", found->airport.code, found->airport.name);
-            } else {
-                printf("Аэропорт с кодом '%s' не найден в базе.\n", code);
-            }
-        } else if (strcmp(command, "add") == 0) {
-            char* colon = strchr(line, ':');
-            if (!colon) {
-                printf("Использование: add <код>:<название>\n");
-                continue;
-            }
-
-            char code[5];
-            char name[256];
-
-            sscanf(line, "%*s %4s", code);
-            toUpperCase(code);
-
-            strcpy(name, colon + 1);
-
-            Node* existing = search(root, code);
-            if (existing) {
-                printf("Аэропорт с кодом '%s' уже существует!\n", code);
-                continue;
-            }
-
-            Airport newAirport;
-            strcpy(newAirport.code, code);
-            strcpy(newAirport.name, name);
-
-            root = insert(root, newAirport);
-            printf("Аэропорт '%s' добавлен в базу.\n", code);
-        } else if (strcmp(command, "delete") == 0) {
-            char code[5];
-            if (sscanf(line, "%*s %s", code) != 1) {
-                printf("Использование: delete <код>\n");
-                continue;
-            }
-            toUpperCase(code);
-
-            Node* existing = search(root, code);
-            if (!existing) {
-                printf("Аэропорт с кодом '%s' не найден в базе.\n", code);
-                continue;
-            }
-
-            root = deleteNode(root, code);
-            printf("Аэропорт '%s' удалён из базы.\n", code);
-        } else {
-            printf("Неизвестная команда. Доступные команды:\n");
-            printf("  find <код> - найти аэропорт по IATA коду\n");
-            printf("  add <код>:<название> - добавить новый аэропорт\n");
-            printf("  delete <код> - удалить аэропорт\n");
-            printf("  save - сохранить базу в файл\n");
-            printf("  quit - завершить работу\n");
-        }
-    }
-
-    freeTree(root);
-    return 0;
 }

@@ -13,8 +13,8 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    strcpy(filename, argv[1]);
-
+    strncpy(filename, argv[1], sizeof(filename) - 1);
+    filename[sizeof(filename) - 1] = '\0';
     int loadCount = loadAirports(filename, &root);
     if (loadCount < 0) {
         printf("Ошибка: Не удалось открыть файл %s\n", filename);
@@ -76,7 +76,7 @@ int main(int argc, char* argv[])
             sscanf(line, "%*s %4s", code);
             toUpperCase(code);
 
-            strcpy(name, colon + 1);
+            snprintf(name, sizeof(name), "%s", colon + 1);
 
             Node* existing = search(root, code);
             if (existing) {
@@ -85,8 +85,10 @@ int main(int argc, char* argv[])
             }
 
             Airport newAirport;
-            strcpy(newAirport.code, code);
-            strcpy(newAirport.name, name);
+            strncpy(newAirport.code, code, sizeof(newAirport.code) - 1);
+            newAirport.code[sizeof(newAirport.code) - 1] = '\0';
+            strncpy(newAirport.name, name, sizeof(newAirport.name) - 1);
+            newAirport.name[sizeof(newAirport.name) - 1] = '\0';
 
             root = insert(root, newAirport);
             printf("Аэропорт '%s' добавлен в базу.\n", code);

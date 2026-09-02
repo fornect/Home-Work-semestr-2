@@ -1,11 +1,14 @@
 #pragma once
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
+#include <stddef.h>
+
+#define IATA_CODE_LENGTH 3
+#define IATA_CODE_CAPACITY (IATA_CODE_LENGTH + 1)
+#define AIRPORT_NAME_CAPACITY 256
 
 typedef struct Airport {
-    char code[5];
-    char name[256];
+    char code[IATA_CODE_CAPACITY];
+    char name[AIRPORT_NAME_CAPACITY];
 } Airport;
 
 typedef struct Node {
@@ -15,34 +18,19 @@ typedef struct Node {
     struct Node* right;
 } Node;
 
-int height(Node* n);
+/* Converts a three-letter IATA code to upper case. */
+int normalizeIataCode(const char* input, char output[IATA_CODE_CAPACITY]);
 
-int getBalance(Node* n);
+/* Returns 1 when inserted, 0 for a duplicate and -1 on allocation failure. */
+int insertAirport(Node** root, const Airport* airport);
 
-Node* createNode(Airport airport);
+/* Returns 1 when deleted and 0 when the code was not found. */
+int deleteAirport(Node** root, const char* code);
 
-Node* rotateRight(Node* a);
-
-Node* rotateLeft(Node* a);
-
-Node* insert(Node* node, Airport airport);
-
-Node* minValueNode(Node* node);
-
-Node* deleteNode(Node* root, char* code);
-
-Node* search(Node* root, char* code);
-
-int countNodes(Node* root);
-
-void saveToFile(Node* root, FILE* file);
-
-int saveTreeToFile(Node* root, const char* filename);
-
+const Node* searchAirport(const Node* root, const char* code);
+size_t countNodes(const Node* root);
+int saveTreeToFile(const Node* root, const char* filename);
 void freeTree(Node* root);
 
-void trimNewline(char* str);
-
-void toUpperCase(char* str);
-
+/* Returns the number of unique records, or -1 on any loading error. */
 int loadAirports(const char* filename, Node** root);

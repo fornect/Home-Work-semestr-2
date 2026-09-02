@@ -1,7 +1,10 @@
 import csv
+from pathlib import Path
 
-with open("/home/fornect/Home-Work-semestr-2/AVL-AeroSoft/airport-codes.csv", encoding="utf-8") as fin, \
-     open("/home/fornect/Home-Work-semestr-2/AVL-AeroSoft/airports.txt", "w", encoding="utf-8") as fout:
+directory = Path(__file__).resolve().parent
+
+with (directory / "airport-codes.csv").open(encoding="utf-8") as fin, \
+     (directory / "airports.txt").open("w", encoding="utf-8") as fout:
     reader = csv.DictReader(fin)
     for row in reader:
         code = row["iata_code"].strip()

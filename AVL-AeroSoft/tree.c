@@ -1,242 +1,220 @@
+#include "tree.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct Airport {
-    char code[5];
-    char name[256];
-} Airport;
-
-typedef struct Node {
-    Airport airport;
-    int height;
-    struct Node* left;
-    struct Node* right;
-} Node;
-
-int height(Node* n)
+static int nodeHeight(const Node* node)
 {
-    if (n) {
-        return n->height;
-    } else {
-        return 0;
-    }
+    return node ? node->height : 0;
 }
 
-int getBalance(Node* n)
+static int maxInt(int first, int second)
 {
-    if (n) {
-        return height(n->left) - height(n->right);
-    } else {
-        return 0;
-    }
+    return first > second ? first : second;
 }
 
-Node* createNode(Airport airport)
+static void updateHeight(Node* node)
 {
-    Node* node = (Node*)malloc(sizeof(Node));
-    node->airport = airport;
+    node->height = 1 + maxInt(nodeHeight(node->left), nodeHeight(node->right));
+}
+
+static int balanceFactor(const Node* node)
+{
+    return node ? nodeHeight(node->left) - nodeHeight(node->right) : 0;
+}
+
+static Node* createNode(const Airport* airport)
+{
+    Node* node = malloc(sizeof(*node));
+    if (!node) {
+        return NULL;
+    }
+
+    node->airport = *airport;
     node->height = 1;
-    node->left = node->right = NULL;
+    node->left = NULL;
+    node->right = NULL;
     return node;
 }
 
-Node* rotateRight(Node* y)
+static Node* rotateRight(Node* root)
 {
-    if (!y || !y->left)
-        return y;
-
-    Node* x = y->left;
-    Node* z = x->right;
-
-    x->right = y;
-    y->left = z;
-
-    int leftHeightY, rightHeightY;
-    leftHeightY = height(y->left);
-    rightHeightY = height(y->right);
-    if (leftHeightY > rightHeightY) {
-        y->height = leftHeightY + 1;
-    } else {
-        y->height = rightHeightY + 1;
+    if (!root || !root->left) {
+        return root;
     }
 
-    int leftHeightX, rightHeightX;
-    leftHeightX = height(x->left);
-    rightHeightX = height(x->right);
-    if (leftHeightX > rightHeightX) {
-        x->height = leftHeightX + 1;
-    } else {
-        x->height = rightHeightX + 1;
-    }
+    Node* newRoot = root->left;
+    Node* transferredSubtree = newRoot->right;
 
-    return x;
+    newRoot->right = root;
+    root->left = transferredSubtree;
+
+    updateHeight(root);
+    updateHeight(newRoot);
+    return newRoot;
 }
 
-Node* rotateLeft(Node* x)
+static Node* rotateLeft(Node* root)
 {
-    if (!x || !x->right)
-        return x;
-
-    Node* y = x->right;
-    Node* z = y->left;
-
-    y->left = x;
-    x->right = z;
-
-    int leftHeightX, rightHeightX;
-    leftHeightX = height(x->left);
-    rightHeightX = height(x->right);
-    if (leftHeightX > rightHeightX) {
-        x->height = leftHeightX + 1;
-    } else {
-        x->height = rightHeightX + 1;
+    if (!root || !root->right) {
+        return root;
     }
 
-    int leftHeightY, rightHeightY;
-    leftHeightY = height(y->left);
-    rightHeightY = height(y->right);
-    if (leftHeightY > rightHeightY) {
-        y->height = leftHeightY + 1;
-    } else {
-        y->height = rightHeightY + 1;
-    }
+    Node* newRoot = root->right;
+    Node* transferredSubtree = newRoot->left;
 
-    return y;
+    newRoot->left = root;
+    root->right = transferredSubtree;
+
+    updateHeight(root);
+    updateHeight(newRoot);
+    return newRoot;
 }
 
-Node* insert(Node* node, Airport airport)
+static Node* rebalance(Node* root)
 {
-    if (!node) {
-        return createNode(airport);
+    updateHeight(root);
+    int balance = balanceFactor(root);
+
+    if (balance > 1) {
+        if (balanceFactor(root->left) < 0) {
+            root->left = rotateLeft(root->left);
+        }
+        return rotateRight(root);
     }
 
-    int cmp = strcmp(airport.code, node->airport.code);
+    if (balance < -1) {
+        if (balanceFactor(root->right) > 0) {
+            root->right = rotateRight(root->right);
+        }
+        return rotateLeft(root);
+    }
 
-    if (cmp < 0) {
-        node->left = insert(node->left, airport);
-    } else if (cmp > 0) {
-        node->right = insert(node->right, airport);
-    } else {
+    return root;
+}
+
+int normalizeIataCode(const char* input, char output[IATA_CODE_CAPACITY])
+{
+    if (!input || !output || strlen(input) != IATA_CODE_LENGTH) {
+        return 0;
+    }
+
+    for (size_t i = 0; i < IATA_CODE_LENGTH; ++i) {
+        unsigned char character = (unsigned char)input[i];
+        character = (unsigned char)toupper(character);
+        if (character < 'A' || character > 'Z') {
+            return 0;
+        }
+        output[i] = (char)character;
+    }
+    output[IATA_CODE_LENGTH] = '\0';
+    return 1;
+}
+
+static Node* insertRecursive(Node* root, const Airport* airport, int* result)
+{
+    if (!root) {
+        Node* node = createNode(airport);
+        *result = node ? 1 : -1;
         return node;
     }
 
-    int leftHeight, rightHeight;
-    leftHeight = height(node->left);
-    rightHeight = height(node->right);
-    if (leftHeight > rightHeight) {
-        node->height = leftHeight + 1;
+    int comparison = strcmp(airport->code, root->airport.code);
+    if (comparison == 0) {
+        *result = 0;
+        return root;
+    }
+
+    if (comparison < 0) {
+        Node* left = insertRecursive(root->left, airport, result);
+        if (*result < 0) {
+            return root;
+        }
+        root->left = left;
     } else {
-        node->height = rightHeight + 1;
-    }
-
-    int balance = getBalance(node);
-
-    if (balance > 1 && node->left) {
-        if (strcmp(airport.code, node->left->airport.code) < 0) {
-            return rotateRight(node);
-        } else {
-            node->left = rotateLeft(node->left);
-            return rotateRight(node);
+        Node* right = insertRecursive(root->right, airport, result);
+        if (*result < 0) {
+            return root;
         }
+        root->right = right;
     }
 
-    if (balance < -1 && node->right) {
-        if (strcmp(airport.code, node->right->airport.code) > 0) {
-            return rotateLeft(node);
-        } else {
-            node->right = rotateRight(node->right);
-            return rotateLeft(node);
-        }
-    }
-    return node;
+    return rebalance(root);
 }
 
-Node* minValueNode(Node* node)
+int insertAirport(Node** root, const Airport* airport)
 {
-    Node* current = node;
+    if (!root || !airport) {
+        return -1;
+    }
+
+    int result = 0;
+    *root = insertRecursive(*root, airport, &result);
+    return result;
+}
+
+static const Node* minimumNode(const Node* root)
+{
+    const Node* current = root;
     while (current->left) {
         current = current->left;
     }
     return current;
 }
 
-Node* deleteNode(Node* root, char* code)
+static Node* deleteRecursive(Node* root, const char* code, int* deleted)
 {
     if (!root) {
-        return root;
+        return NULL;
     }
 
-    int cmp = strcmp(code, root->airport.code);
-
-    if (cmp < 0) {
-        root->left = deleteNode(root->left, code);
-    } else if (cmp > 0) {
-        root->right = deleteNode(root->right, code);
+    int comparison = strcmp(code, root->airport.code);
+    if (comparison < 0) {
+        root->left = deleteRecursive(root->left, code, deleted);
+    } else if (comparison > 0) {
+        root->right = deleteRecursive(root->right, code, deleted);
     } else {
+        *deleted = 1;
         if (!root->left || !root->right) {
-            Node* temp;
-            if (root->left) {
-                temp = root->left;
-            } else {
-                temp = root->right;
-            }
-            if (!temp) {
-                temp = root;
-                root = NULL;
-            } else {
-                *root = *temp;
-            }
-            free(temp);
-        } else {
-            Node* temp = minValueNode(root->right);
-            root->airport = temp->airport;
-            root->right = deleteNode(root->right, temp->airport.code);
+            Node* child = root->left ? root->left : root->right;
+            free(root);
+            return child;
         }
+
+        const Node* successor = minimumNode(root->right);
+        root->airport = successor->airport;
+        root->right = deleteRecursive(root->right, successor->airport.code, deleted);
     }
 
-    if (!root) {
-        return root;
-    }
-
-    int leftHeight, rightHeight;
-    leftHeight = height(root->left);
-    rightHeight = height(root->right);
-    if (leftHeight > rightHeight) {
-        root->height = leftHeight + 1;
-    } else {
-        root->height = rightHeight + 1;
-    }
-
-    int balance = getBalance(root);
-
-    if (balance > 1) {
-        if (getBalance(root->left) < 0)
-            root->left = rotateLeft(root->left);
-        return rotateRight(root);
-    }
-
-    if (balance < -1) {
-        if (getBalance(root->right) > 0)
-            root->right = rotateRight(root->right);
-        return rotateLeft(root);
-    }
-    return root;
+    return rebalance(root);
 }
 
-Node* search(Node* root, char* code)
+int deleteAirport(Node** root, const char* code)
 {
-    if (!root || strcmp(root->airport.code, code) == 0) {
-        return root;
+    if (!root || !code) {
+        return 0;
     }
-    if (strcmp(code, root->airport.code) < 0) {
-        return search(root->left, code);
-    }
-    return search(root->right, code);
+
+    int deleted = 0;
+    *root = deleteRecursive(*root, code, &deleted);
+    return deleted;
 }
 
-int countNodes(Node* root)
+const Node* searchAirport(const Node* root, const char* code)
+{
+    while (root) {
+        int comparison = strcmp(code, root->airport.code);
+        if (comparison == 0) {
+            return root;
+        }
+        root = comparison < 0 ? root->left : root->right;
+    }
+    return NULL;
+}
+
+size_t countNodes(const Node* root)
 {
     if (!root) {
         return 0;
@@ -244,58 +222,83 @@ int countNodes(Node* root)
     return 1 + countNodes(root->left) + countNodes(root->right);
 }
 
-void saveToFile(Node* root, FILE* file)
+static int writeTree(const Node* root, FILE* file)
 {
-    if (root) {
-        saveToFile(root->left, file);
-        fprintf(file, "%s:%s\n", root->airport.code, root->airport.name);
-        saveToFile(root->right, file);
+    if (!root) {
+        return 1;
     }
+
+    return writeTree(root->left, file)
+        && fprintf(file, "%s:%s\n", root->airport.code, root->airport.name) >= 0
+        && writeTree(root->right, file);
 }
 
-int saveTreeToFile(Node* root, const char* filename)
+int saveTreeToFile(const Node* root, const char* filename)
 {
-    FILE* file = fopen(filename, "w");
-    if (!file) {
-        printf("Ошибка: Не удалось открыть файл %s для записи!\n", filename);
+    if (!filename) {
         return 0;
     }
 
-    saveToFile(root, file);
-    fclose(file);
-    return 1;
+    size_t temporaryLength = strlen(filename) + sizeof(".tmp");
+    char* temporaryFilename = malloc(temporaryLength);
+    if (!temporaryFilename) {
+        return 0;
+    }
+    snprintf(temporaryFilename, temporaryLength, "%s.tmp", filename);
+
+    FILE* file = fopen(temporaryFilename, "w");
+    if (!file) {
+        free(temporaryFilename);
+        return 0;
+    }
+
+    int success = writeTree(root, file);
+    if (success && fflush(file) != 0) {
+        success = 0;
+    }
+    if (fclose(file) != 0) {
+        success = 0;
+    }
+    if (success && rename(temporaryFilename, filename) != 0) {
+        success = 0;
+    }
+    if (!success) {
+        remove(temporaryFilename);
+    }
+
+    free(temporaryFilename);
+    return success;
 }
 
 void freeTree(Node* root)
 {
-    if (root) {
-        freeTree(root->left);
-        freeTree(root->right);
-        free(root);
-    }
-}
-
-void trimNewline(char* str)
-{
-    char* newline = strchr(str, '\n');
-    if (newline) {
-        *newline = '\0';
-    }
-}
-
-void toUpperCase(char* str)
-{
-    if (str == NULL) {
+    if (!root) {
         return;
     }
-    for (int i = 0; str[i] != '\0'; i++) {
-        str[i] = (char)toupper((unsigned char)str[i]);
+    freeTree(root->left);
+    freeTree(root->right);
+    free(root);
+}
+
+static void removeLineEnding(char* line)
+{
+    char* lineEnding = strpbrk(line, "\r\n");
+    if (lineEnding) {
+        *lineEnding = '\0';
     }
+}
+
+static void discardLineRemainder(FILE* file)
+{
+    int character;
+    do {
+        character = fgetc(file);
+    } while (character != '\n' && character != EOF);
 }
 
 int loadAirports(const char* filename, Node** root)
 {
-    if (root == NULL) {
+    if (!filename || !root) {
         return -1;
     }
 
@@ -306,23 +309,44 @@ int loadAirports(const char* filename, Node** root)
 
     char line[512];
     int count = 0;
+    int success = 1;
 
-    while (fgets(line, sizeof(line), file)) {
-        trimNewline(line);
+    while (fgets(line, (int)sizeof(line), file)) {
+        if (!strchr(line, '\n') && !feof(file)) {
+            discardLineRemainder(file);
+            success = 0;
+            break;
+        }
+        removeLineEnding(line);
 
         char* colon = strchr(line, ':');
-        if (colon) {
-            Airport airport;
-            *colon = '\0';
-            strncpy(airport.code, line, sizeof(airport.code) - 1);
-            airport.code[sizeof(airport.code) - 1] = '\0';
-            strncpy(airport.name, colon + 1, sizeof(airport.name) - 1);
-            airport.name[sizeof(airport.name) - 1] = '\0';
-            *root = insert(*root, airport);
-            count++;
+        if (!colon || colon == line || colon[1] == '\0') {
+            success = 0;
+            break;
         }
+        *colon = '\0';
+
+        Airport airport;
+        if (!normalizeIataCode(line, airport.code)
+            || strlen(colon + 1) >= sizeof(airport.name)) {
+            success = 0;
+            break;
+        }
+        snprintf(airport.name, sizeof(airport.name), "%s", colon + 1);
+
+        int inserted = insertAirport(root, &airport);
+        if (inserted < 0) {
+            success = 0;
+            break;
+        }
+        count += inserted;
     }
 
-    fclose(file);
-    return count;
+    if (ferror(file)) {
+        success = 0;
+    }
+    if (fclose(file) != 0) {
+        success = 0;
+    }
+    return success ? count : -1;
 }

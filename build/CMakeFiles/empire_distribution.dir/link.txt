@@ -1,2 +1,0 @@
-/usr/bin/ar qc libempire_distribution.a CMakeFiles/empire_distribution.dir/src/empire.c.o
-/usr/bin/ranlib libempire_distribution.a

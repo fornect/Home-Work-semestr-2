@@ -1,1 +1,0 @@
-/usr/bin/cc -g -Wl,--dependency-file=CMakeFiles/empire.dir/link.d CMakeFiles/empire.dir/src/main.c.o -o empire  libempire_distribution.a

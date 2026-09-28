@@ -1,0 +1,1 @@
+/usr/bin/cc -g -Wl,--dependency-file=CMakeFiles/empire_tests.dir/link.d CMakeFiles/empire_tests.dir/tests/test_empire.c.o -o empire_tests  libempire_distribution.a

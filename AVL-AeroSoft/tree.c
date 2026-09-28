@@ -1,9 +1,28 @@
 #include "tree.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef struct Airport {
+    char code[IATA_CODE_CAPACITY];
+    char name[AIRPORT_NAME_CAPACITY];
+} Airport;
+
+typedef struct Node {
+    Airport airport;
+    int height;
+    struct Node* left;
+    struct Node* right;
+} Node;
+
+struct AvlTree {
+    Node* root;
+    size_t size;
+};
 
 static int nodeHeight(const Node* node)
 {
@@ -50,7 +69,6 @@ static Node* rotateRight(Node* root)
 
     newRoot->right = root;
     root->left = transferredSubtree;
-
     updateHeight(root);
     updateHeight(newRoot);
     return newRoot;
@@ -67,7 +85,6 @@ static Node* rotateLeft(Node* root)
 
     newRoot->left = root;
     root->right = transferredSubtree;
-
     updateHeight(root);
     updateHeight(newRoot);
     return newRoot;
@@ -95,64 +112,35 @@ static Node* rebalance(Node* root)
     return root;
 }
 
-int normalizeIataCode(const char* input, char output[IATA_CODE_CAPACITY])
-{
-    if (!input || !output || strlen(input) != IATA_CODE_LENGTH) {
-        return 0;
-    }
-
-    for (size_t i = 0; i < IATA_CODE_LENGTH; ++i) {
-        unsigned char character = (unsigned char)input[i];
-        character = (unsigned char)toupper(character);
-        if (character < 'A' || character > 'Z') {
-            return 0;
-        }
-        output[i] = (char)character;
-    }
-    output[IATA_CODE_LENGTH] = '\0';
-    return 1;
-}
-
-static Node* insertRecursive(Node* root, const Airport* airport, int* result)
+static Node* insertRecursive(Node* root, const Airport* airport, AvlTreeResult* result)
 {
     if (!root) {
         Node* node = createNode(airport);
-        *result = node ? 1 : -1;
+        *result = node ? AvlTreeChanged : AvlTreeError;
         return node;
     }
 
     int comparison = strcmp(airport->code, root->airport.code);
     if (comparison == 0) {
-        *result = 0;
+        *result = AvlTreeNotChanged;
         return root;
     }
 
     if (comparison < 0) {
         Node* left = insertRecursive(root->left, airport, result);
-        if (*result < 0) {
+        if (*result == AvlTreeError) {
             return root;
         }
         root->left = left;
     } else {
         Node* right = insertRecursive(root->right, airport, result);
-        if (*result < 0) {
+        if (*result == AvlTreeError) {
             return root;
         }
         root->right = right;
     }
 
     return rebalance(root);
-}
-
-int insertAirport(Node** root, const Airport* airport)
-{
-    if (!root || !airport) {
-        return -1;
-    }
-
-    int result = 0;
-    *root = insertRecursive(*root, airport, &result);
-    return result;
 }
 
 static const Node* minimumNode(const Node* root)
@@ -185,24 +173,13 @@ static Node* deleteRecursive(Node* root, const char* code, int* deleted)
 
         const Node* successor = minimumNode(root->right);
         root->airport = successor->airport;
-        root->right = deleteRecursive(root->right, successor->airport.code, deleted);
+        root->right = deleteRecursive(root->right, root->airport.code, deleted);
     }
 
     return rebalance(root);
 }
 
-int deleteAirport(Node** root, const char* code)
-{
-    if (!root || !code) {
-        return 0;
-    }
-
-    int deleted = 0;
-    *root = deleteRecursive(*root, code, &deleted);
-    return deleted;
-}
-
-const Node* searchAirport(const Node* root, const char* code)
+static const Node* findNode(const Node* root, const char* code)
 {
     while (root) {
         int comparison = strcmp(code, root->airport.code);
@@ -214,45 +191,154 @@ const Node* searchAirport(const Node* root, const char* code)
     return NULL;
 }
 
-size_t countNodes(const Node* root)
+static void destroyNodes(Node* root)
 {
     if (!root) {
-        return 0;
+        return;
     }
-    return 1 + countNodes(root->left) + countNodes(root->right);
+
+    destroyNodes(root->left);
+    destroyNodes(root->right);
+    free(root);
 }
 
-static int writeTree(const Node* root, FILE* file)
+AvlTree* avlTreeCreate(void)
+{
+    return calloc(1, sizeof(AvlTree));
+}
+
+void avlTreeDestroy(AvlTree* tree)
+{
+    if (!tree) {
+        return;
+    }
+
+    destroyNodes(tree->root);
+    free(tree);
+}
+
+int avlTreeNormalizeCode(const char* input, char output[IATA_CODE_CAPACITY])
+{
+    if (!input || !output || strlen(input) != IATA_CODE_LENGTH) {
+        return 0;
+    }
+
+    for (size_t i = 0; i < IATA_CODE_LENGTH; ++i) {
+        unsigned char character = (unsigned char)input[i];
+        character = (unsigned char)toupper(character);
+        if (character < 'A' || character > 'Z') {
+            return 0;
+        }
+        output[i] = (char)character;
+    }
+    output[IATA_CODE_LENGTH] = '\0';
+    return 1;
+}
+
+AvlTreeResult avlTreeInsert(AvlTree* tree, const char* code, const char* name)
+{
+    if (!tree || !name || *name == '\0' || strlen(name) >= AIRPORT_NAME_CAPACITY) {
+        return AvlTreeError;
+    }
+
+    Airport airport;
+    if (!avlTreeNormalizeCode(code, airport.code)) {
+        return AvlTreeError;
+    }
+    snprintf(airport.name, sizeof(airport.name), "%s", name);
+
+    AvlTreeResult result = AvlTreeNotChanged;
+    tree->root = insertRecursive(tree->root, &airport, &result);
+    if (result == AvlTreeChanged) {
+        ++tree->size;
+    }
+    return result;
+}
+
+AvlTreeResult avlTreeDelete(AvlTree* tree, const char* code)
+{
+    char normalizedCode[IATA_CODE_CAPACITY];
+    if (!tree || !avlTreeNormalizeCode(code, normalizedCode)) {
+        return AvlTreeError;
+    }
+
+    int deleted = 0;
+    tree->root = deleteRecursive(tree->root, normalizedCode, &deleted);
+    if (!deleted) {
+        return AvlTreeNotChanged;
+    }
+
+    --tree->size;
+    return AvlTreeChanged;
+}
+
+const char* avlTreeFind(const AvlTree* tree, const char* code)
+{
+    char normalizedCode[IATA_CODE_CAPACITY];
+    if (!tree || !avlTreeNormalizeCode(code, normalizedCode)) {
+        return NULL;
+    }
+
+    const Node* found = findNode(tree->root, normalizedCode);
+    return found ? found->airport.name : NULL;
+}
+
+size_t avlTreeSize(const AvlTree* tree)
+{
+    return tree ? tree->size : 0;
+}
+
+static int writeNodes(const Node* root, FILE* file)
 {
     if (!root) {
         return 1;
     }
 
-    return writeTree(root->left, file)
+    return writeNodes(root->left, file)
         && fprintf(file, "%s:%s\n", root->airport.code, root->airport.name) >= 0
-        && writeTree(root->right, file);
+        && writeNodes(root->right, file);
 }
 
-int saveTreeToFile(const Node* root, const char* filename)
+static FILE* createTemporaryFile(const char* filename, char** temporaryFilename)
 {
-    if (!filename) {
-        return 0;
+    const unsigned int ATTEMPT_LIMIT = 100;
+    size_t capacity = strlen(filename) + sizeof(".tmp.99");
+    char* candidate = malloc(capacity);
+    if (!candidate) {
+        return NULL;
     }
 
-    size_t temporaryLength = strlen(filename) + sizeof(".tmp");
-    char* temporaryFilename = malloc(temporaryLength);
-    if (!temporaryFilename) {
-        return 0;
+    FILE* file = NULL;
+    for (unsigned int attempt = 0; attempt < ATTEMPT_LIMIT; ++attempt) {
+        snprintf(candidate, capacity, "%s.tmp.%u", filename, attempt);
+        errno = 0;
+        file = fopen(candidate, "wx");
+        if (file || errno != EEXIST) {
+            break;
+        }
     }
-    snprintf(temporaryFilename, temporaryLength, "%s.tmp", filename);
 
-    FILE* file = fopen(temporaryFilename, "w");
     if (!file) {
-        free(temporaryFilename);
+        free(candidate);
+        return NULL;
+    }
+    *temporaryFilename = candidate;
+    return file;
+}
+
+int avlTreeSave(const AvlTree* tree, const char* filename)
+{
+    if (!tree || !filename) {
         return 0;
     }
 
-    int success = writeTree(root, file);
+    char* temporaryFilename = NULL;
+    FILE* file = createTemporaryFile(filename, &temporaryFilename);
+    if (!file) {
+        return 0;
+    }
+
+    int success = writeNodes(tree->root, file);
     if (success && fflush(file) != 0) {
         success = 0;
     }
@@ -268,16 +354,6 @@ int saveTreeToFile(const Node* root, const char* filename)
 
     free(temporaryFilename);
     return success;
-}
-
-void freeTree(Node* root)
-{
-    if (!root) {
-        return;
-    }
-    freeTree(root->left);
-    freeTree(root->right);
-    free(root);
 }
 
 static void removeLineEnding(char* line)
@@ -296,9 +372,33 @@ static void discardLineRemainder(FILE* file)
     } while (character != '\n' && character != EOF);
 }
 
-int loadAirports(const char* filename, Node** root)
+static int readAirports(FILE* file, AvlTree* destination)
 {
-    if (!filename || !root) {
+    char line[512];
+    while (fgets(line, (int)sizeof(line), file)) {
+        if (!strchr(line, '\n') && !feof(file)) {
+            discardLineRemainder(file);
+            return 0;
+        }
+        removeLineEnding(line);
+
+        char* colon = strchr(line, ':');
+        if (!colon || colon == line || colon[1] == '\0') {
+            return 0;
+        }
+        *colon = '\0';
+
+        AvlTreeResult result = avlTreeInsert(destination, line, colon + 1);
+        if (result == AvlTreeError) {
+            return 0;
+        }
+    }
+    return !ferror(file);
+}
+
+int avlTreeLoad(AvlTree* tree, const char* filename)
+{
+    if (!tree || !filename) {
         return -1;
     }
 
@@ -307,46 +407,18 @@ int loadAirports(const char* filename, Node** root)
         return -1;
     }
 
-    char line[512];
-    int count = 0;
-    int success = 1;
-
-    while (fgets(line, (int)sizeof(line), file)) {
-        if (!strchr(line, '\n') && !feof(file)) {
-            discardLineRemainder(file);
-            success = 0;
-            break;
-        }
-        removeLineEnding(line);
-
-        char* colon = strchr(line, ':');
-        if (!colon || colon == line || colon[1] == '\0') {
-            success = 0;
-            break;
-        }
-        *colon = '\0';
-
-        Airport airport;
-        if (!normalizeIataCode(line, airport.code)
-            || strlen(colon + 1) >= sizeof(airport.name)) {
-            success = 0;
-            break;
-        }
-        snprintf(airport.name, sizeof(airport.name), "%s", colon + 1);
-
-        int inserted = insertAirport(root, &airport);
-        if (inserted < 0) {
-            success = 0;
-            break;
-        }
-        count += inserted;
-    }
-
-    if (ferror(file)) {
-        success = 0;
-    }
+    AvlTree loaded = { 0 };
+    int success = readAirports(file, &loaded);
     if (fclose(file) != 0) {
         success = 0;
     }
-    return success ? count : -1;
+    if (!success || loaded.size > (size_t)INT_MAX) {
+        destroyNodes(loaded.root);
+        return -1;
+    }
+
+    destroyNodes(tree->root);
+    tree->root = loaded.root;
+    tree->size = loaded.size;
+    return (int)tree->size;
 }
